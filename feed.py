@@ -21,6 +21,8 @@ def parse_date(dt_str):
 def scrape_page(page=1):
     url = f"{BASE}/user/{USER}?page={page}"
     resp = requests.get(url, headers={"User-Agent": UA}, timeout=30)
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
     rows = soup.select("table > tbody > tr")
