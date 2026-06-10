@@ -15,6 +15,11 @@ def parse_date(dt_str):
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
         return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
     except Exception:
+        pass
+    try:
+        dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d %H:%M")
+        return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+    except Exception:
         return None
 
 
@@ -46,10 +51,9 @@ def scrape_page(page=1):
         magnet = magnet_tag["href"] if magnet_tag else ""
         torrent_tag = cells[2].find("a", href=lambda h: h and h.endswith(".torrent"))
         torrent_url = BASE + torrent_tag["href"] if torrent_tag else ""
-        time_tag = cells[4].find("time") if len(cells) > 4 else None
         pub_date = ""
-        if time_tag and time_tag.get("datetime"):
-            pub_date = parse_date(time_tag["datetime"])
+        if len(cells) > 4:
+            pub_date = parse_date(cells[4].get_text(strip=True))
         if not pub_date:
             pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
         results.append({
