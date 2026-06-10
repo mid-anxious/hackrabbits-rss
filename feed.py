@@ -82,12 +82,13 @@ def load_existing():
                 m = re.search(r"(magnet:\?xt=urn:btih:[^\s<]+)", desc.text)
                 if m:
                     magnet = m.group(1)
+            torrent_url = link if link.endswith(".torrent") else f"{BASE}/download/{tid}.torrent"
             entries.append({
                 "tid": tid,
                 "title": item.findtext("title", ""),
                 "link": link,
                 "magnet": magnet,
-                "torrent_url": link,
+                "torrent_url": torrent_url,
                 "pub_date": item.findtext("pubDate", ""),
             })
         return entries
