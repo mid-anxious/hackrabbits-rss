@@ -26,14 +26,16 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run scraper
-        run: python feed.py
-      - name: Commit feed.xml if changed
+      - name: Run scraper (filtered)
+        run: python feed.py --filter complete --output feed.xml
+      - name: Run scraper (all)
+        run: python feed.py --filter "" --output feed-all.xml
+      - name: Commit feeds if changed
         run: |
           git config user.name "hackrabbits-rss-bot"
           git config user.email "bot@hackrabbits-rss"
-          git add feed.xml
-          git diff --cached --quiet || git commit -m "Update feed.xml [skip ci]"
+          git add feed.xml feed-all.xml
+          git diff --cached --quiet || git commit -m "Update feeds [skip ci]"
           git push
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

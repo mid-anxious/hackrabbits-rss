@@ -1,4 +1,4 @@
-import os, re
+import os, re, sys, argparse
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
@@ -6,10 +6,9 @@ from xml.etree import ElementTree as ET
 from xml.dom import minidom
 
 USER = "hackrabbits"
-FILTER = "complete"
 BASE = "https://nyaa.si"
-FEED_FILE = "feed.xml"
 UA = "Mozilla/5.0 (compatible; hackrabbits-rss-bot/1.0)"
+
 
 def parse_date(dt_str):
     try:
@@ -17,6 +16,7 @@ def parse_date(dt_str):
         return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
     except Exception:
         return None
+
 
 def scrape_page(page=1):
     url = f"{BASE}/user/{USER}?page={page}"
@@ -60,11 +60,12 @@ def scrape_page(page=1):
         })
     return results
 
-def load_existing():
-    if not os.path.exists(FEED_FILE):
-        return []
+
+def load_existing(feed_file):
+    if not os.path.exists(feed_file):
+        return [], set()
     try:
-        tree = ET.parse(FEED_FILE)
+        tree = ET.parse(feed_file)
         root = tree.getroot()
         entries = []
         for item in root.findall(".//item"):
@@ -84,34 +85,35 @@ def load_existing():
                     magnet = m.group(1)
             torrent_url = link if link.endswith(".torrent") else f"{BASE}/download/{tid}.torrent"
             entries.append({
-                "tid": tid,
-                "title": item.findtext("title", ""),
-                "link": link,
-                "magnet": magnet,
+                "tid": tid, "title": item.findtext("title", ""),
+                "link": link, "magnet": magnet,
                 "torrent_url": torrent_url,
                 "pub_date": item.findtext("pubDate", ""),
             })
-        return entries
+        seen = {e["tid"] for e in entries}
+        return entries, seen
     except Exception:
-        return []
+        return [], set()
+
 
 def info_hash_from_magnet(magnet):
     m = re.search(r"btih:([a-fA-F0-9]{40})", magnet)
     return m.group(1).lower() if m else ""
 
-def build_rss(entries):
+
+def build_rss(entries, filter_text, feed_file, pages_url):
     NS_NYAA = "https://nyaa.si/xmlns/nyaa"
+    label = f" ({filter_text})" if filter_text else ""
     rss = ET.Element("rss", version="2.0",
                      attrib={"xmlns:atom": "http://www.w3.org/2005/Atom",
                              "xmlns:nyaa": NS_NYAA})
     channel = ET.SubElement(rss, "channel")
-    ET.SubElement(channel, "title").text = f"{USER} - {FILTER.title()} Releases"
+    ET.SubElement(channel, "title").text = f"{USER}{label}"
     ET.SubElement(channel, "link").text = f"{BASE}/user/{USER}"
     ET.SubElement(channel, "description").text = \
-        f"Persistent filtered RSS feed for {USER}'s releases containing '{FILTER}' on Nyaa"
+        f"Persistent RSS feed for {USER}'s releases{' containing ' + filter_text if filter_text else ''} on Nyaa"
     a = ET.SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    a.set("href",
-          "https://mid-anxious.github.io/hackrabbits-rss/feed.xml")
+    a.set("href", pages_url + feed_file)
     a.set("rel", "self")
     a.set("type", "application/rss+xml")
     for e in reversed(entries):
@@ -132,10 +134,23 @@ def build_rss(entries):
     dom = minidom.parseString(raw.encode())
     return dom.toprettyxml(indent="  ")
 
+
 def main():
-    existing = load_existing()
-    seen = {e["tid"] for e in existing}
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--filter", default="complete",
+                        help="Filter string (empty = no filter)")
+    parser.add_argument("--output", default="feed.xml",
+                        help="Output feed file")
+    parser.add_argument("--pages-url", default="https://mid-anxious.github.io/hackrabbits-rss/",
+                        help="GitHub Pages base URL")
+    args = parser.parse_args()
+
+    filter_text = args.filter
+    feed_file = args.output
+
+    existing, seen = load_existing(feed_file)
     print(f"Loaded {len(existing)} existing entries")
+
     all_new = []
     page = 1
     while True:
@@ -148,19 +163,25 @@ def main():
         if not unknown:
             print("  No new IDs – caught up")
             break
-        matched = [e for e in unknown if FILTER.lower() in e["title"].lower()]
+        if filter_text:
+            matched = [e for e in unknown if filter_text.lower() in e["title"].lower()]
+        else:
+            matched = unknown
         print(f"  Got {len(unknown)} new, {len(matched)} match filter")
         all_new.extend(matched)
         seen.update(e["tid"] for e in unknown)
         page += 1
+
     if not all_new and existing:
         print("Nothing new")
         return
+
     merged = all_new + existing
     merged.sort(key=lambda e: e["pub_date"])
-    print(f"Writing {len(merged)} entries to {FEED_FILE}")
-    with open(FEED_FILE, "w", encoding="utf-8") as f:
-        f.write(build_rss(merged))
+    print(f"Writing {len(merged)} entries to {feed_file}")
+    with open(feed_file, "w", encoding="utf-8") as f:
+        f.write(build_rss(merged, filter_text, feed_file, args.pages_url))
+
 
 if __name__ == "__main__":
     main()
