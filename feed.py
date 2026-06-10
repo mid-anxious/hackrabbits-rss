@@ -1,4 +1,4 @@
-import os, re, sys, argparse
+import os, re, sys, argparse, calendar
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
@@ -9,18 +9,28 @@ USER = "hackrabbits"
 BASE = "https://nyaa.si"
 UA = "Mozilla/5.0 (compatible; hackrabbits-rss-bot/1.0)"
 
+MONTHS = {m: i for i, m in enumerate(calendar.month_abbr) if m}
 
-def parse_date(dt_str):
+
+def parse_dt(dt_str):
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(dt_str.strip(), fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def fmt_rfc2822(dt):
+    return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+
+
+def date_sort_key(pub_date_str):
     try:
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    except Exception:
-        pass
-    try:
-        dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d %H:%M")
-        return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    except Exception:
-        return None
+        dt = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S +0000")
+        return dt.timestamp()
+    except ValueError:
+        return 0
 
 
 def scrape_page(page=1):
@@ -51,16 +61,16 @@ def scrape_page(page=1):
         magnet = magnet_tag["href"] if magnet_tag else ""
         torrent_tag = cells[2].find("a", href=lambda h: h and h.endswith(".torrent"))
         torrent_url = BASE + torrent_tag["href"] if torrent_tag else ""
-        pub_date = ""
+        dt = None
         if len(cells) > 4:
-            pub_date = parse_date(cells[4].get_text(strip=True))
-        if not pub_date:
-            pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+            dt = parse_dt(cells[4].get_text(strip=True))
+        if dt is None:
+            dt = datetime.now(timezone.utc)
         results.append({
             "tid": tid, "title": title,
             "link": f"{BASE}/view/{tid}",
             "magnet": magnet, "torrent_url": torrent_url,
-            "pub_date": pub_date,
+            "pub_date": fmt_rfc2822(dt),
         })
     return results
 
@@ -132,8 +142,9 @@ def build_rss(entries, filter_text, feed_file, pages_url):
         ih = info_hash_from_magnet(e.get("magnet", ""))
         if ih:
             ET.SubElement(item, f"{{{NS_NYAA}}}infoHash").text = ih
+        magnet_url = e.get("magnet", "")
         desc = ET.SubElement(item, "description")
-        desc.text = e.get("magnet", "")
+        desc.text = magnet_url
         torr = e.get("torrent_url", f"{BASE}/download/{e['tid']}.torrent")
         enc = ET.SubElement(item, "enclosure")
         enc.set("url", torr)
@@ -182,7 +193,7 @@ def main():
         page += 1
 
     merged = all_new + existing
-    merged.sort(key=lambda e: e["pub_date"])
+    merged.sort(key=lambda e: date_sort_key(e["pub_date"]))
     print(f"Writing {len(merged)} entries to {feed_file}")
     with open(feed_file, "w", encoding="utf-8") as f:
         f.write(build_rss(merged, filter_text, feed_file, args.pages_url))
