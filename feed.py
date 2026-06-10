@@ -71,7 +71,11 @@ def load_existing():
             guid = item.find("guid")
             if guid is None or not guid.text:
                 continue
-            tid = guid.text.replace("nyaa-", "")
+            tid = re.search(r"/view/(\d+)", guid.text)
+            if not tid:
+                continue
+            tid = tid.group(1)
+            link = item.findtext("link", "")
             desc = item.find("description")
             magnet = ""
             if desc is not None and desc.text:
@@ -81,18 +85,24 @@ def load_existing():
             entries.append({
                 "tid": tid,
                 "title": item.findtext("title", ""),
-                "link": item.findtext("link", ""),
+                "link": link,
                 "magnet": magnet,
-                "torrent_url": "",
+                "torrent_url": link,
                 "pub_date": item.findtext("pubDate", ""),
             })
         return entries
     except Exception:
         return []
 
+def info_hash_from_magnet(magnet):
+    m = re.search(r"btih:([a-fA-F0-9]{40})", magnet)
+    return m.group(1).lower() if m else ""
+
 def build_rss(entries):
+    NS_NYAA = "https://nyaa.si/xmlns/nyaa"
     rss = ET.Element("rss", version="2.0",
-                     attrib={"xmlns:atom": "http://www.w3.org/2005/Atom"})
+                     attrib={"xmlns:atom": "http://www.w3.org/2005/Atom",
+                             "xmlns:nyaa": NS_NYAA})
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = f"{USER} - {FILTER.title()} Releases"
     ET.SubElement(channel, "link").text = f"{BASE}/user/{USER}"
@@ -106,11 +116,15 @@ def build_rss(entries):
     for e in reversed(entries):
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = e["title"]
-        ET.SubElement(item, "link").text = e["link"]
+        ET.SubElement(item, "link").text = e.get("torrent_url",
+                                                  f"{BASE}/download/{e['tid']}.torrent")
         g = ET.SubElement(item, "guid")
-        g.set("isPermaLink", "false")
-        g.text = f"nyaa-{e['tid']}"
+        g.set("isPermaLink", "true")
+        g.text = f"{BASE}/view/{e['tid']}"
         ET.SubElement(item, "pubDate").text = e["pub_date"]
+        ih = info_hash_from_magnet(e.get("magnet", ""))
+        if ih:
+            ET.SubElement(item, f"{{{NS_NYAA}}}infoHash").text = ih
         desc = ET.SubElement(item, "description")
         desc.text = e.get("magnet", "")
     raw = ET.tostring(rss, encoding="unicode")
