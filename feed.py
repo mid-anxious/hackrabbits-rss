@@ -31,7 +31,7 @@ def scrape_page(page=1):
     results = []
     for row in rows:
         cells = row.find_all("td")
-        if len(cells) < 4:
+        if len(cells) < 5:
             continue
         title_cell = cells[1]
         title_link = title_cell.find("a", href=re.compile(r"^/view/\d+"))
@@ -46,7 +46,7 @@ def scrape_page(page=1):
         magnet = magnet_tag["href"] if magnet_tag else ""
         torrent_tag = cells[2].find("a", href=lambda h: h and h.endswith(".torrent"))
         torrent_url = BASE + torrent_tag["href"] if torrent_tag else ""
-        time_tag = cells[3].find("time") if len(cells) > 3 else None
+        time_tag = cells[4].find("time") if len(cells) > 4 else None
         pub_date = ""
         if time_tag and time_tag.get("datetime"):
             pub_date = parse_date(time_tag["datetime"])
@@ -130,6 +130,11 @@ def build_rss(entries, filter_text, feed_file, pages_url):
             ET.SubElement(item, f"{{{NS_NYAA}}}infoHash").text = ih
         desc = ET.SubElement(item, "description")
         desc.text = e.get("magnet", "")
+        torr = e.get("torrent_url", f"{BASE}/download/{e['tid']}.torrent")
+        enc = ET.SubElement(item, "enclosure")
+        enc.set("url", torr)
+        enc.set("type", "application/x-bittorrent")
+        enc.set("length", "0")
     raw = ET.tostring(rss, encoding="unicode")
     dom = minidom.parseString(raw.encode())
     return dom.toprettyxml(indent="  ")
