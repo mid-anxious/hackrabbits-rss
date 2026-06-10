@@ -35,8 +35,11 @@ jobs:
           git config user.name "hackrabbits-rss-bot"
           git config user.email "bot@hackrabbits-rss"
           git add feed.xml feed-all.xml
-          git diff --cached --quiet || git commit -m "Update feeds [skip ci]"
-          git push
+          git diff --cached --quiet && echo "No changes" || {
+            git commit -m "Update feeds [skip ci]"
+            git pull --rebase origin main
+            git push
+          }
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

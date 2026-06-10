@@ -181,10 +181,6 @@ def main():
         seen.update(e["tid"] for e in unknown)
         page += 1
 
-    if not all_new and existing:
-        print("Nothing new")
-        return
-
     merged = all_new + existing
     merged.sort(key=lambda e: e["pub_date"])
     print(f"Writing {len(merged)} entries to {feed_file}")
