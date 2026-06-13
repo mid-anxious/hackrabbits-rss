@@ -49,14 +49,27 @@ def scrape_page(page=1):
         if len(cells) < 5:
             continue
         title_cell = cells[1]
-        title_link = title_cell.find("a", href=re.compile(r"^/view/\d+"))
+        # Specifically avoid links that jump to comments (#comments)
+        title_link = title_cell.find("a", href=re.compile(r"^/view/\d+$"))
+        if not title_link:
+            # Fallback if the link is different, but ensure it's not the comment link
+            title_link = title_cell.find("a", href=re.compile(r"^/view/\d+"))
+            if title_link and "#comments" in title_link.get("href", ""):
+                title_link = None
+
         if not title_link:
             continue
+            
         tid_match = re.search(r"/view/(\d+)", title_link["href"])
         if not tid_match:
             continue
         tid = tid_match.group(1)
         title = (title_link.get("title") or title_link.text).strip()
+        
+        # If title is still trash like "1 comment", skip or it will be fixed by re-scrape
+        if "comment" in title.lower() and len(title) < 15:
+            continue
+
         magnet_tag = cells[2].find("a", href=lambda h: h and h.startswith("magnet:"))
         magnet = magnet_tag["href"] if magnet_tag else ""
         torrent_tag = cells[2].find("a", href=lambda h: h and h.endswith(".torrent"))
@@ -86,21 +99,37 @@ def load_existing(feed_file):
             guid = item.find("guid")
             if guid is None or not guid.text:
                 continue
-            tid = re.search(r"/view/(\d+)", guid.text)
-            if not tid:
+            tid_m = re.search(r"/view/(\d+)", guid.text)
+            if not tid_m:
                 continue
-            tid = tid.group(1)
+            tid = tid_m.group(1)
+            
+            title = item.findtext("title", "")
+            # Discard bad entries so they can be re-scraped properly
+            if "comment" in title.lower() and len(title) < 15:
+                continue
+
             link = item.findtext("link", "")
-            desc = item.find("description")
+            desc = item.findtext("description", "")
+            
+            # Extract magnet from anywhere in the entry
             magnet = ""
-            if desc is not None and desc.text:
-                m = re.search(r"(magnet:\?xt=urn:btih:[^\s<]+)", desc.text)
+            if link.startswith("magnet:"):
+                magnet = link
+            elif desc:
+                m = re.search(r"(magnet:\?xt=urn:btih:[^\s<]+)", desc)
                 if m:
                     magnet = m.group(1)
-            torrent_url = link if link.endswith(".torrent") else f"{BASE}/download/{tid}.torrent"
+            
+            torrent_url = f"{BASE}/download/{tid}.torrent"
+            # If the link was a .torrent link, move it to torrent_url
+            if link.endswith(".torrent"):
+                torrent_url = link
+
             entries.append({
-                "tid": tid, "title": item.findtext("title", ""),
-                "link": link, "magnet": magnet,
+                "tid": tid, "title": title,
+                "link": f"{BASE}/view/{tid}", # Internal reference link
+                "magnet": magnet,
                 "torrent_url": torrent_url,
                 "pub_date": item.findtext("pubDate", ""),
             })
