@@ -133,21 +133,29 @@ def build_rss(entries, filter_text, feed_file, pages_url):
     for e in reversed(entries):
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = e["title"]
-        ET.SubElement(item, "link").text = e.get("torrent_url",
-                                                  f"{BASE}/download/{e['tid']}.torrent")
+        
+        # Use magnet link as primary if available, fallback to torrent URL
+        magnet_url = e.get("magnet", "")
+        torrent_url = e.get("torrent_url", f"{BASE}/download/{e['tid']}.torrent")
+        
+        ET.SubElement(item, "link").text = magnet_url if magnet_url else torrent_url
+        
         g = ET.SubElement(item, "guid")
         g.set("isPermaLink", "true")
         g.text = f"{BASE}/view/{e['tid']}"
         ET.SubElement(item, "pubDate").text = e["pub_date"]
-        ih = info_hash_from_magnet(e.get("magnet", ""))
+        
+        ih = info_hash_from_magnet(magnet_url)
         if ih:
             ET.SubElement(item, f"{{{NS_NYAA}}}infoHash").text = ih
-        magnet_url = e.get("magnet", "")
+            
         desc = ET.SubElement(item, "description")
-        desc.text = magnet_url
-        torr = e.get("torrent_url", f"{BASE}/download/{e['tid']}.torrent")
+        desc.text = magnet_url if magnet_url else e["title"]
+        
+        # Keep torrent URL as enclosure for clients that prefer it, 
+        # but qBittorrent will use the <link> magnet if present.
         enc = ET.SubElement(item, "enclosure")
-        enc.set("url", torr)
+        enc.set("url", torrent_url)
         enc.set("type", "application/x-bittorrent")
         enc.set("length", "0")
     raw = ET.tostring(rss, encoding="unicode")
