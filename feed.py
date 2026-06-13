@@ -134,7 +134,8 @@ def build_rss(entries, filter_text, feed_file, pages_url):
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = e["title"]
         
-        # Use magnet link as primary if available, fallback to torrent URL
+        # Use magnet in enclosure (highest priority for qBittorrent RSS parser)
+        # and as <link> for other clients; .torrent URL stored in description
         magnet_url = e.get("magnet", "")
         torrent_url = e.get("torrent_url", f"{BASE}/download/{e['tid']}.torrent")
         
@@ -150,12 +151,15 @@ def build_rss(entries, filter_text, feed_file, pages_url):
             ET.SubElement(item, f"{{{NS_NYAA}}}infoHash").text = ih
             
         desc = ET.SubElement(item, "description")
-        desc.text = magnet_url if magnet_url else e["title"]
+        if magnet_url and torrent_url:
+            desc.text = f"{magnet_url}\nTorrent: {torrent_url}"
+        elif magnet_url:
+            desc.text = magnet_url
+        else:
+            desc.text = e["title"]
         
-        # Keep torrent URL as enclosure for clients that prefer it, 
-        # but qBittorrent will use the <link> magnet if present.
         enc = ET.SubElement(item, "enclosure")
-        enc.set("url", torrent_url)
+        enc.set("url", magnet_url if magnet_url else torrent_url)
         enc.set("type", "application/x-bittorrent")
         enc.set("length", "0")
     raw = ET.tostring(rss, encoding="unicode")
